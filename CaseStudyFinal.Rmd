@@ -1,0 +1,353 @@
+---
+title: "CaseStudyFinal"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r}
+mydataset<-read.csv("BestBuy.csv")
+summary(mydataset)
+hist(mydataset$Warranty)
+
+#install.packages("sqldf")
+library(sqldf)
+testsql=sqldf("select age,newcustomer from mydataset where newcustomer=1")
+
+#Summary Statistics
+hist(mydataset$PriceCategory) #comparing the histograms of key independent variable which are not dummy/factor variables
+hist(log(mydataset$PriceCategory))
+hist(mydataset$hhincome) #comparing the histograms of key independent variable which are not dummy/factor variables
+hist(log(mydataset$hhincome))
+
+#checking for multicollinearity
+library(usdm)
+df=data.frame(mydataset$newcustomer,mydataset$age,mydataset$hisp,mydataset$PriceCategory,mydataset$married,mydataset$MyBestBuy,mydataset$hhincome,mydataset$appliances,mydataset$familysize,mydataset$productgeneration,mydataset$weekend)
+vif(df)
+cor(df)
+df1=data.frame(mydataset$newcustomer,mydataset$age,mydataset$hisp,mydataset$PriceCategory,mydataset$married,mydataset$MyBestBuy,mydataset$hhincome,mydataset$appliances,mydataset$familysize,mydataset$weekend)
+vif(df1)
+cor(df1)
+df2=data.frame(mydataset$newcustomer,mydataset$age,mydataset$hisp,mydataset$PriceCategory,mydataset$MyBestBuy,mydataset$hhincome,mydataset$appliances,mydataset$familysize,mydataset$weekend)
+vif(df2)
+cor(df2)
+
+# Linear probability model
+
+#our dependent variable is Warranty
+#our Key Independent Variables are PriceCategory*appliances, hisp,hhincome,familysize
+#our control variables are age, newcustomer, weekend
+names(mydataset)
+
+model1<- lm(Warranty~PriceCategory+newcustomer+age+hisp+MyBestBuy+hhincome+appliances+familysize+weekend,data =mydataset) 
+summary(model1) #first attempt
+model2<- lm(Warranty~PriceCategory+PriceCategory*appliances+newcustomer+age+hisp+MyBestBuy+hhincome+appliances+familysize+weekend,data =mydataset)
+summary(model2) #adding interaction variable
+
+model2wl<- lm(Warranty~PriceCategory+PriceCategory*appliances+newcustomer+age+hisp+MyBestBuy+log(hhincome+1)+appliances+familysize+weekend,data =mydataset)
+summary(model2wl) # this is model2 using log(hhincome) --> we get an error because there are some 0 values (which are transformed into -inf)
+
+
+predictedprobability_lm<-predict(model2) # let's look at the predicted probability of return for each observation in the data 
+plot(mydataset$Warranty,predictedprobability_lm)
+range(predictedprobability_lm) #negative values and values greater than one so this is wrong!
+
+predictedprobability_lm<-predict(model2wl) # let's look at the predicted probability of return for each observation in the data 
+plot(mydataset$Warranty,predictedprobability_lm)
+range(predictedprobability_lm)
+
+#Logit
+
+library(MASS)
+library(QuantPsyc)
+library(aod)
+library(ggplot2)
+library(Rcpp)
+
+#calculating ratio
+sum(mydataset$Warranty==0)
+sum(mydataset$Warranty==1)
+a=1216/9
+b=1990/9
+min(a,b)
+
+
+#Changing family size to dummy
+mydataset$familydummy<-ifelse(mydataset$familysize>2,1,0)
+
+#model with interaction
+logit1<-glm(Warranty~PriceCategory+newcustomer+age+hisp+MyBestBuy+hhincome+appliances+familysize+weekend,data =mydataset,family = "binomial")
+summary(logit1)
+
+#model with interaction
+logit2<-glm(Warranty~PriceCategory+PriceCategory*appliances+newcustomer+age+hisp+MyBestBuy+hhincome+appliances+familysize+weekend,data =mydataset,family = "binomial")
+summary(logit2)
+
+#testing logit1 and logit
+anova(logit1,logit2)
+
+exp(coef(logit2))
+
+with(logit2, null.deviance - deviance)
+with(logit2, df.null - df.residual)
+with(logit2, pchisq(null.deviance - deviance, df.null - df.residual, lower.tail = FALSE))
+
+
+pred = predict(logit2, data=mydataset)
+warrenty_prediction <- ifelse(pred >= 0.5,1,0)
+misClasificError <- mean(warrenty_prediction != mydataset$Warranty)
+print(paste('Accuracy',1-misClasificError))
+table(mydataset$Warranty, pred>=0.5)
+
+#model with log(hhincome+1)
+logit3<-glm(Warranty~PriceCategory+PriceCategory*appliances+newcustomer+age+hisp+MyBestBuy+log(hhincome+1)+appliances+familysize+weekend,data =mydataset,family = "binomial") #added log hhincome
+summary(logit3)
+
+
+exp(coef(logit3))
+
+with(logit3, null.deviance - deviance)
+with(logit3, df.null - df.residual)
+with(logit3, pchisq(null.deviance - deviance, df.null - df.residual, lower.tail = FALSE))
+
+ 
+pred = predict(logit3, data=mydataset)
+warrenty_prediction <- ifelse(pred >= 0.5,1,0)
+misClasificError <- mean(warrenty_prediction != mydataset$Warranty)
+print(paste('Accuracy',1-misClasificError))
+table(mydataset$Warranty, pred>=0.5)
+
+
+
+#model with interaction and log(hhincome+1) and newcustomer
+logit4<-glm(Warranty~PriceCategory+PriceCategory*appliances+age+hisp+MyBestBuy+log(hhincome+1)+appliances+familydummy+weekend+newcustomer,data =mydataset,family = "binomial")
+summary(logit4) # final model
+exp(coef(logit4))
+with(logit4, null.deviance - deviance)
+with(logit4, df.null - df.residual)
+with(logit4, pchisq(null.deviance - deviance, df.null - df.residual, lower.tail = FALSE))
+
+
+pred = predict(logit4, data=mydataset, type="response")
+warrenty_prediction <- ifelse(pred >= 0.5,1,0)
+misClasificError <- mean(warrenty_prediction != mydataset$Warranty)
+print(paste('Accuracy',1-misClasificError))
+table(mydataset$Warranty, pred>=0.5)
+
+#testing
+AIC(logit3, logit4)  
+BIC(logit3, logit4)
+
+#model with familydummy and familyfactor
+mydataset$familyfactor<-factor(mydataset$familysize)
+logit8<-glm(Warranty~PriceCategory+PriceCategory*appliances+age+hisp+MyBestBuy+log(hhincome+1)+appliances+familyfactor+weekend+newcustomer,data =mydataset,family = "binomial")
+summary(logit8) # final model
+exp(coef(logit8))
+with(logit4, null.deviance - deviance)
+with(logit4, df.null - df.residual)
+with(logit4, pchisq(null.deviance - deviance, df.null - df.residual, lower.tail = FALSE))
+
+
+pred = predict(logit8, data=mydataset, type="response")
+warrenty_prediction <- ifelse(pred >= 0.5,1,0)
+misClasificError <- mean(warrenty_prediction != mydataset$Warranty)
+print(paste('Accuracy',1-misClasificError))
+table(mydataset$Warranty, pred>=0.5)
+
+#testing
+AIC(logit8, logit4)  
+BIC(logit8, logit4)
+
+#trying interaction newcustomer*MyBestBuy
+logit5<-glm(Warranty~PriceCategory+PriceCategory*appliances+newcustomer*MyBestBuy+newcustomer+age+hisp+MyBestBuy+log(hhincome+1)+appliances+familydummy+weekend,data =mydataset,family = "binomial")
+summary(logit5) # with new customer*MyBestBuy
+
+with(logit5, null.deviance - deviance)
+with(logit5, df.null - df.residual)
+with(logit5, pchisq(null.deviance - deviance, df.null - df.residual, lower.tail = FALSE))
+
+
+pred = predict(logit5, data=mydataset, type="response")
+warrenty_prediction <- ifelse(pred >= 0.5,1,0)
+misClasificError <- mean(warrenty_prediction != mydataset$Warranty)
+print(paste('Accuracy',1-misClasificError))
+table(mydataset$Warranty, pred>=0.5)
+
+anova(logit5,logit4, test="Chisq")
+
+#trying interaction PriceCategory*familydummy
+logit6<-glm(Warranty~PriceCategory+PriceCategory*familydummy+newcustomer+age+hisp+MyBestBuy+log(hhincome+1)+appliances+familydummy+weekend,data =mydataset,family = "binomial")
+summary(logit6) # with new customer*MyBestBuy
+
+with(logit6, null.deviance - deviance)
+with(logit6, df.null - df.residual)
+with(logit6, pchisq(null.deviance - deviance, df.null - df.residual, lower.tail = FALSE))
+
+
+pred = predict(logit6, data=mydataset, type="response")
+warrenty_prediction <- ifelse(pred >= 0.5,1,0)
+misClasificError <- mean(warrenty_prediction != mydataset$Warranty)
+print(paste('Accuracy',1-misClasificError))
+table(mydataset$Warranty, pred>=0.5)
+
+#testing
+anova(logit6,logit4, test="Chisq")
+
+#trying with quadratic
+logit7<-glm(Warranty~PriceCategory+PriceCategory*appliances+age+hisp+MyBestBuy+log(hhincome+1)+I(log(hhincome+1)^2)+appliances+familydummy+weekend+newcustomer,data =mydataset,family = "binomial")
+summary(logit7) # final model
+exp(coef(logit7))
+with(logit7, null.deviance - deviance)
+with(logit7, df.null - df.residual)
+with(logit7, pchisq(null.deviance - deviance, df.null - df.residual, lower.tail = FALSE))
+
+
+pred = predict(logit7, data=mydataset, type="response")
+warrenty_prediction <- ifelse(pred >= 0.5,1,0)
+misClasificError <- mean(warrenty_prediction != mydataset$Warranty)
+print(paste('Accuracy',1-misClasificError))
+table(mydataset$Warranty, pred>=0.5)
+
+#model with familydummy and familyfactor
+mydataset$familyfactor<-factor(mydataset$familysize)
+logit8<-glm(Warranty~PriceCategory+PriceCategory*appliances+age+hisp+MyBestBuy+log(hhincome+1)+appliances+familyfactor+weekend+newcustomer,data =mydataset,family = "binomial")
+summary(logit8) # final model
+exp(coef(logit8))
+with(logit4, null.deviance - deviance)
+with(logit4, df.null - df.residual)
+with(logit4, pchisq(null.deviance - deviance, df.null - df.residual, lower.tail = FALSE))
+
+
+pred = predict(logit8, data=mydataset, type="response")
+warrenty_prediction <- ifelse(pred >= 0.5,1,0)
+misClasificError <- mean(warrenty_prediction != mydataset$Warranty)
+print(paste('Accuracy',1-misClasificError))
+table(mydataset$Warranty, pred>=0.5)
+
+#testing
+AIC(logit8, logit4)  
+BIC(logit8, logit4)
+
+#select required rows
+test<-subset(mydataset,hhincome>17 & hhincome<52,select =c("hhincome"))
+nrow(test)
+
+#heteroskedasticity
+library(lmtest)
+gqtest(logit4) 
+bptest(logit4)
+
+library(sandwich)
+library(foreign)
+
+coeftest(logit4, vcov = vcovHC(logit4, "HC1")) # With robust standard errors
+summary(logit4)
+
+##Predicted Probs
+
+#Interaction interpretation
+library(ggplot2)
+
+newdatatest <- with(mydataset,data.frame(PriceCategory= rep(seq(from = 1, to = 17, length.out = 17),2), newcustomer=mean(newcustomer),age=mean(age),hisp=mean(hisp),MyBestBuy=mean(MyBestBuy),hhincome=mean(hhincome),appliances=(rep(0:1, each = 17)),weekend=mean(weekend),familydummy=mean(familydummy)))
+
+newdatatest1 <- cbind(newdatatest, predict(logit4, newdata = newdatatest, type="link", se=TRUE))
+newdatatest1 <- within(newdatatest1, {
+  PredictedProb <- plogis(fit)
+  LL <- plogis(fit - (1.96 * se.fit))
+  UL <- plogis(fit + (1.96 * se.fit))})
+
+head(newdatatest1)
+
+ggplot(newdatatest1, aes(x = PriceCategory, y = PredictedProb))+
+  geom_ribbon(aes(ymin = LL, ymax = UL, fill = factor(appliances)), alpha = .2) +
+  geom_line(aes(colour = factor(appliances)), size=1)
+
+#Hispanic
+newdatatest_hisp <- with(mydataset,data.frame(hisp=(rep(0:1)),PriceCategory=mean(PriceCategory), newcustomer=mean(newcustomer),age=mean(age),MyBestBuy=mean(MyBestBuy),hhincome=mean(hhincome),appliances=mean(appliances),weekend=mean(weekend),familydummy=mean(familydummy)))
+
+newdatatest_hisp1 <- cbind(newdatatest_hisp, predict(logit4, newdata = newdatatest_hisp, type="link", se=TRUE))
+newdatatest_hisp1 <- within(newdatatest_hisp1, {
+  PredictedProb <- plogis(fit)
+  LL <- plogis(fit - (1.96 * se.fit))
+  UL <- plogis(fit + (1.96 * se.fit))})
+
+ggplot(newdatatest_hisp1, aes(x = hisp, y = PredictedProb))+
+  geom_ribbon(aes(ymin = LL, ymax = UL)) +geom_line(aes(colour = "hisp"), size=1)
+
+# FamilyDummy 
+newdatatest_familysize <- with(mydataset,data.frame(hisp=mean(hisp),PriceCategory=mean(PriceCategory), newcustomer=mean(newcustomer),age=mean(age),MyBestBuy=mean(MyBestBuy),hhincome=mean(hhincome),appliances=mean(appliances),weekend=mean(weekend),familydummy=rep(0:1)))
+
+newdatatest_familysize1 <- cbind(newdatatest_familysize, predict(logit4, newdata = newdatatest_familysize, type="link", se=TRUE))
+newdatatest_familysize1
+newdatatest_familysize1 <- within(newdatatest_familysize1, {
+  PredictedProb <- plogis(fit)
+  LL <- plogis(fit - (1.96 * se.fit))
+  UL <- plogis(fit + (1.96 * se.fit))})
+
+ggplot(newdatatest_familysize1, aes(x = familydummy, y = PredictedProb))+
+  geom_ribbon(aes(ymin = LL, ymax = UL)) +
+  geom_line(aes(colour = "familysize"), size=1)
+
+##HHIncome
+newdatatest_income <- with(mydataset,data.frame(PriceCategory= mean(PriceCategory), newcustomer=mean(newcustomer),age=mean(age),hisp=mean(hisp),MyBestBuy=mean(MyBestBuy),hhincome=rep(seq(from = 0, to =1312 ,length.out=10)),appliances=mean(appliances),weekend=mean(weekend),familydummy=mean(familydummy)))
+
+hist(log(1+mydataset$hhincome))
+
+newdatatest1 <- cbind(newdatatest_income, predict(logit4, newdata = newdatatest_income, type="link", se=TRUE))
+newdatatest1 <- within(newdatatest1, {
+  PredictedProb <- plogis(fit)
+  LL <- plogis(fit - (1.96 * se.fit))
+  UL <- plogis(fit + (1.96 * se.fit))})
+
+
+ggplot(newdatatest1, aes(x = hhincome, y = PredictedProb))+
+  geom_ribbon(aes(ymin = LL, ymax = UL), alpha = .2) +
+  geom_line(aes(colour = "hhincome"), size=1)
+
+```
+
+
+
+```
+
+```{r}
+#Probit
+probit1<- glm(Warranty~PriceCategory+newcustomer+age+hisp+MyBestBuy+hhincome+appliances+familysize+weekend,data =mydataset, family=binomial(link="probit"))
+summary(probit1)              
+### final model
+probit2<- glm(Warranty~PriceCategory+PriceCategory*appliances+newcustomer+age+hisp+MyBestBuy+hhincome+appliances+familydummy+weekend,data =mydataset, family=binomial(link="probit"))
+summary(probit2)   
+
+probit3<- glm(Warranty~PriceCategory+PriceCategory*appliances+newcustomer+age+hisp+MyBestBuy+log(hhincome+1)+appliances+familysize+weekend,data =mydataset, family=binomial(link="probit"))
+summary(probit3)
+
+with(probit2, null.deviance - deviance)
+with(probit2, df.null - df.residual)
+with(probit2, pchisq(null.deviance - deviance, df.null - df.residual, lower.tail = FALSE))
+
+pred = predict(probit2, data=mydataset)
+warrenty_prediction <- ifelse(pred >= 0.5,1,0)
+misClasificError <- mean(warrenty_prediction != mydataset$Warranty)
+print(paste('Accuracy',1-misClasificError))
+table(mydataset$Warranty, pred>=0.5)
+
+#we decide to go with logit b/c accuracy is better since accuracy is higher with logit model
+```
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
