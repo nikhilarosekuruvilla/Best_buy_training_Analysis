@@ -1,1 +1,11 @@
+# Source files
+# ============
+*.Rdata     text
+*.rdb       binary
+*.rds       binary
+*.Rd        text
+*.Rdx       binary
+*.Rmd		text
+*.R  		text
+
 CaseStudyFinal.html linguist-vendored
